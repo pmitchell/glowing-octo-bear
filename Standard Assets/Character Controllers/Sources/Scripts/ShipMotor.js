@@ -24,12 +24,12 @@ private var controller : CharacterController;
 
 class ShipMotorMovementController {
 	// The maximum acceleration when moving
-	var maxForwardThrust : float = 0.3;
-	var maxBackwardsThrust : float = 0.3;
+	var maxForwardThrust : float = 5;
+	var maxBackwardsThrust : float = 5;
 
 	var maxRollThrust : float = 1.0;
 	var maxPitchThrust : float = 1.0;
-	var maxYawThrust : float = 0.1;
+	var maxYawThrust : float = 60.0;
 	
 	// For the next variables, @System.NonSerialized tells Unity to not serialize the variable or show it in the inspector view.
 	// Very handy for organization!
@@ -40,12 +40,12 @@ class ShipMotorMovementController {
 
 	// We will keep track of the character's current velocity,
 	// and use acceleration to change this
-	@System.NonSerialized
+	//@System.NonSerialized
 	var velocity : Vector3;
 
 	// We will keep track of the character's current rotational inertia,
 	// and use acceleration to change this
-	@System.NonSerialized
+	//@System.NonSerialized
 	var angularVelocity : Vector3;
 	
 	@System.NonSerialized
@@ -87,7 +87,7 @@ class ShipMotorAccelController {
 	var lastButtonDownTime : float = -100;
 }
 
-var accelerating : ShipMotorAccelController = ShipMotorAccelController();
+var accelerator : ShipMotorAccelController = ShipMotorAccelController();
 
 
 function Awake () {
@@ -112,6 +112,15 @@ private function UpdateFunction () {
 	
 	// We always want the movement to be framerate independent.  Multiplying by Time.deltaTime does this.
 	var currentRotationOffset : Vector3 = rotation * Time.deltaTime;
+	
+	// Apply JUMP-brakes
+	// TODO: better
+	if (Input.GetButton("Jump"))
+		movement.angularVelocity = Vector3.Slerp(
+			movement.angularVelocity,
+			Vector3.zero,
+			accelerator.extraThrust * Time.deltaTime
+			);
 
 	tr.Rotate(currentRotationOffset);
 
@@ -142,18 +151,29 @@ function Update () {
 		UpdateFunction();
 }
 
-private function ApplyInputVelocityChange (velocity : Vector3) {	
+private function ApplyInputVelocityChange (velocity : Vector3) {
+	if (!canControl)
+		return velocity;
+			
 	// Find desired velocity
 	// We're 2D here.
 	// Backward thrust not used yet.
-	var desiredAcceleration : float = Input.GetAxis("Vertical") * maxForwardThrust;
+	var desiredThrust : float = Input.GetAxis("Vertical") * movement.maxForwardThrust;
 
-	if (!canControl)
-		desiredAcceleration = 0;
+	//2D: Restrict z velocity.
+	//var ALLOWED_VELOCITY = Camera.main.transform.forward;
+	//var ALLOWED_VELOCITY = new Vector3(1, 1, 1);
+	//var transformVelocityProjection = Vector3.Project(transform.forward, ALLOWED_VELOCITY);
 
-	desiredVelocity = transform.forward * desiredAcceleration;
-
-	velocity += desiredVelocity;
+	var desiredAcceleration : Vector3 = transform.forward * desiredThrust * Time.deltaTime;
+	
+	// Boosted deceleration if rotation and acceleration are opposed (opposite signs)
+	// Dot product: Two vectors in the 
+	if (Vector3.Dot(desiredAcceleration, movement.velocity) < 0) 
+		desiredAcceleration *= 10;
+		
+	velocity += desiredAcceleration;
+	movement.velocity = velocity;
 	
 	// Enforce max velocity
 	//var velocityChangeVector : Vector3 = (desiredVelocity - velocity);
@@ -161,20 +181,34 @@ private function ApplyInputVelocityChange (velocity : Vector3) {
 	//	velocityChangeVector = velocityChangeVector.normalized * maxVelocityChange;
 	//}
 	
-	return velocity;
+	// Apply JUMP-brakes
+	if (Input.GetButton("Jump"))
+		movement.velocity = Vector3.Slerp(
+			movement.velocity,
+			Vector3.zero,
+			accelerator.extraThrust * Time.deltaTime
+			);
+	
+	return movement.velocity;
 }
 
-private function ApplyInputRotationChange (rotation : Vector3) {	
-	// Find desired rotation
-	var desiredYawAcceleration : Vector3 = Input.GetAxis("Horizontal") * maxYawThrust;
-
+private function ApplyInputRotationChange (rotation : Vector3) {
 	if (!canControl)
-		desiredYawAcceleration = Vector3.zero;
-
+		return rotation;
+		
+	// Find desired rotation
+	// (Invert x axis)
+	var desiredYawAcceleration : float = Input.GetAxis("Horizontal") * -movement.maxYawThrust * Time.deltaTime;
+	var desiredRotationAxis : float = rotation.y;
+	
+	// Boosted deceleration if rotation and acceleration are opposed (opposite signs)
+	if (desiredRotationAxis * desiredYawAcceleration < 0) 
+		desiredYawAcceleration *= 10;
+		
 	// Accelerate turnwise
-	rotation += desiredYawAcceleration * Time.deltaTime; 
-
-	movement.angularVelocity = rotation;
+	desiredRotationAxis += desiredYawAcceleration;
+	
+	movement.angularVelocity.y = desiredRotationAxis;
 
 	// Enforce max rotation
 	//var velocityChangeVector : Vector3 = (desiredVelocity - velocity);
@@ -182,7 +216,15 @@ private function ApplyInputRotationChange (rotation : Vector3) {
 	//	velocityChangeVector = velocityChangeVector.normalized * maxVelocityChange;
 	//}
 	
-	return rotation;
+	// Apply JUMP-brakes
+	if (Input.GetButton("Jump"))
+		movement.angularVelocity = Vector3.Slerp(
+			movement.angularVelocity,
+			Vector3.zero,
+			accelerator.extraThrust * Time.deltaTime
+			);
+	
+	return movement.angularVelocity;
 }
 
 function OnControllerColliderHit (hit : ControllerColliderHit) {
@@ -196,6 +238,7 @@ function OnControllerColliderHit (hit : ControllerColliderHit) {
 //		movement.hitPoint = hit.point;
 //		movement.frameVelocity = Vector3.zero;
 //	}
+	Debug.Log("Ouch!");
 }
 
 function GetDirection () {
