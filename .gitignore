@@ -1,0 +1,15 @@
+UnityLockfile
+Temp
+~*
+.*~
+Library/metadata
+*.tif
+*.meta
+*.FBX
+*.cubemap
+*.psd
+*.wav
+*.unity
+*.prefab
+*.tga
+*.png
